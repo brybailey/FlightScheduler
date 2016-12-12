@@ -1,0 +1,579 @@
+import structure5.*;
+import java.util.Iterator;
+import java.util.Comparator;
+import java.util.Scanner;
+import java.io.*;
+
+/**
+ * Bryan Bailey 
+ *
+ * The main class for FlytrapAirlines. 
+ * 
+ */
+public class FlytrapAirlines {
+	
+    /** 
+     * The schedule for FTA.  
+     * The vertex labels are Airports, and the edge labels are Routes. 
+     */
+    protected Graph<Airport,Route> schedule;
+	
+    /** 
+     * A table of Airports.  Used for the "airports" command and to
+     * convert Strings like "SFO" to Airport objects. 
+     */
+    protected Hashtable<String,Airport> airports;
+	
+	
+    /******************* Main Command Loop *********************/
+	
+    /**
+     * Reads in commands and processes them until "quit"
+     * is seen.  The valid command formats are described
+     * by the help command.
+     */
+    public void processCommands() {
+	printHelp();
+	Scanner in = new Scanner(System.in);
+	while (true) {
+	    System.out.print("enter command> ");
+	    if (!in.hasNext()) break;
+	    String cmd = in.next();
+	    if (cmd.equals("airports")) {
+		printAirports();
+	    } else if (cmd.equals("flights")) {
+		Airport src = getAirport(in.next());
+		Airport dest = getAirport(in.next());
+		if (src == null || dest == null) {
+		    System.out.println("Bad " + 
+				       (src==null?"departure":"arrival") + 
+				       " airport code.");
+		} else {
+		    printFlights(src, dest);
+		}
+	    } else if (cmd.equals("distance")) {
+		Airport src = getAirport(in.next());
+		Airport dest = getAirport(in.next());
+		if (src == null || dest == null) {
+		    System.out.println("Bad " + 
+				       (src==null?"departure":"arrival") + 
+				       " airport code.");
+		} else {
+		    printDistance(src, dest);
+		}
+	    } else if (cmd.equals("trip")) {
+		Airport src = getAirport(in.next());
+		Airport dest = getAirport(in.next());
+		int departTime = in.nextInt();
+		if (src == null || dest == null) {
+		    System.out.println("Bad " + 
+				       (src==null?"departure":"arrival") + 
+				       " airport code.");
+		} else {
+		    printTrip(src, dest, departTime);
+		}
+	    } else if (cmd.equals("help")) {
+		printHelp();
+	    } else if (cmd.equals("quit")) {
+		return;
+	    } else if (cmd.equals("new")) {
+		in.next();
+		String portCode = in.next().toUpperCase();
+		String portName = in.nextLine().trim();
+		System.out.println( "" );
+		addAirport( portCode, portName );
+	    } else if( cmd.equals( "remove" ) ) {
+		in.next();
+		String theCode = in.next().toUpperCase();
+		removeAirport( theCode );
+	    } else if( cmd.equals( "add" ) ) {
+		in.next();
+
+		// flight number and start/end destinations
+		int flightNum = in.nextInt();
+		Airport here = getAirport( in.next() );
+		Airport there = getAirport( in.next() );
+		Assert.condition(here != null, "bad airport: " + here);
+		Assert.condition(there != null, "bad airport: " + there);
+
+		// start and end time
+		int start = in.nextInt();
+		int end = in.nextInt();
+
+		// duration of flight
+		int time = differenceInMinutes( end, start );
+
+		// create a new edge between the airports
+		Edge<Airport,Route> e = schedule.getEdge(here, there);
+		Assert.condition(e != null, "bad route (edge)");
+		Route r = e.label();
+		Assert.condition(r != null, "bad route");
+		Flight f = new Flight(flightNum, here, there, start, end, time);
+		// associate the flight with the route
+		r.addFlight(f);
+	    } else {
+		System.out.println("eh?");
+	    }
+	}
+    }      
+
+	
+    /**
+     * Helper method to convert an airport code to a Airport object.
+     */
+    protected Airport getAirport(String s) {
+	return airports.get(s.toUpperCase());	
+    }
+
+    // Add an airport to the list
+    // Pre: code and name are non-null strings
+    protected void addAirport(String code, String name ){
+	Assert.pre( code != null, "Bad code." );
+	Assert.pre( name != null, "Bad code." );
+	Airport newAirport = new Airport( code, name );
+	System.out.println( newAirport );
+	airports.put( name, newAirport );
+    }
+
+    // Remove the airport from the list
+    // Pre: code is a non-null string
+    protected void removeAirport( String code ) {
+	Assert.pre( code != null, "Bad code." );
+	airports.remove( code );
+    }
+
+    ////////////////////////// help command ///////////////////////////////
+		
+    /**
+     * Handles the "help" command by printing a help message.
+     */
+    protected void printHelp() {
+	System.out.println("\n*** Welcome to Flytrap Airlines ***");
+	System.out.println(" Valid commands are:");
+	System.out.println("    help");
+	System.out.println("    quit");
+	System.out.println("    airports");
+	System.out.println("    flights DEPART ARRIVE");
+	System.out.println("    distance DEPART ARRIVE");
+	System.out.println("    trip DEPART ARRIVE TIME");
+	System.out.println("    new airport CODE CITY, STATE");
+	System.out.println("    remove airport CODE");
+	System.out.println("    add flight FLIGHTNUMBER DEPARTCODE ARRIVECODE DEPARTTIME ARRIVETIME" );
+	System.out.println();
+    }
+
+	
+    ////////////////////////// airports command ///////////////////////////////
+	
+    /**
+     * Handles the "airports" command by printing an alphabetic list
+     * of airports serviced by FTA.
+     */
+
+    protected void printAirports() {
+
+	// An ordered vector to hold the airports in an alphatbetized order
+	OrderedVector<Airport> airportAlpha = new OrderedVector<Airport>();
+
+	// Add all the airports on the schedule graph
+	//	for( Airport nextAirport: schedule ) {
+	for( Airport nextAirport: airports ) {
+	    airportAlpha.add( nextAirport );
+	}
+
+	// After they are ordered in the vector, print them out with their code and their full name
+	for( Airport nextAir: airportAlpha ){
+	    System.out.println( nextAir + ": " + nextAir.name() );
+	}
+    }
+
+    ////////////////////////// flights command ///////////////////////////////
+	
+    /**
+     * Handles the "flights" command.  
+     * @pre  departAirport and arriveAirport are non-null Airports.
+     * @post prints all daily flights on that route, ordered from earliest
+     *       latest.
+     */
+    protected void printFlights(Airport departAirport, Airport arriveAirport) {
+	Assert.pre(departAirport != null, "bad depart airport");
+	Assert.pre(arriveAirport != null, "bad arrived airport");
+
+	// If there is a route from the departure to the arrival airport, then we can print all the routes
+	if( schedule.containsEdge( departAirport, arriveAirport ) ){
+	    // Get the iterator to go through all the available flights
+	    Iterator routes = schedule.getEdge( departAirport, arriveAirport ).label().flights();
+
+	    // Print out all the routes
+	    // Will print in alphabetical order
+	    while( routes.hasNext() ) {
+		System.out.println( routes.next() );
+	    }
+
+	    // Else tell the user there is no route
+	} else System.out.println( "There are no flights along this route" );
+    }
+
+    ////////////////////////// distance command ///////////////////////////////
+	
+    /**
+     * Handles the "distance" command.  This uses the dijkstra method
+     * to compute shortest paths
+     * @pre  departAirport and arriveAirport are non-null Airports.
+     * @post prints the shortest path distance for a trip from the departAirport
+     *       to the arriveAirport.
+     */
+    protected void printDistance(Airport departAirport, 
+				 Airport arriveAirport) {
+	Assert.pre(departAirport != null, "bad depart airport");
+	Assert.pre(arriveAirport != null, "bad arrived airport");
+		
+	Map<Airport,ComparableAssociation<Integer,Edge<Airport,Route>>> m = 
+	    dijkstra(schedule, departAirport); 
+	ComparableAssociation<Integer,Edge<Airport,Route>> v = 
+	    m.get(arriveAirport);
+	if (m.get(arriveAirport) == null) {
+	    System.out.println("Not possible.");
+	} else {
+	    System.out.println("Total Distance is " + v.getKey() + " miles.");
+	    printShortestPath(m, arriveAirport); 
+	}
+    }
+
+    /**
+     * An implementation of dijkstra's algorithm to compute route
+     * distances.  You should not modify this method.
+     * @pre g is a schedule graph and start is a non-null Airport
+     * @post returns a map from Airport to (distance, previous-edge) 
+     *       Associations.
+     */
+    protected Map<Airport,ComparableAssociation<Integer,Edge<Airport,Route>>>
+	dijkstra(Graph<Airport,Route> g, Airport start) {
+
+	// keep a priority queue of distances from source
+	PriorityQueue<ComparableAssociation<Integer,Edge<Airport,Route>>> q = 
+	    new SkewHeap<ComparableAssociation<Integer,Edge<Airport,Route>>>();
+
+	// map from node to shortest-path info
+	Map<Airport,ComparableAssociation<Integer,Edge<Airport,Route>>> result = 
+	    new Table<Airport,ComparableAssociation<Integer,Edge<Airport,Route>>>();
+
+	// airport that we are currently visiting.  Begin with start airport.
+	Airport current = start;
+		
+	// result is a (total-distance,previous-edge) pair.  We create
+	// a "fake" one that leads to the start airport.
+	ComparableAssociation<Integer,Edge<Airport,Route>> possiblePath =
+	    new ComparableAssociation<Integer,Edge<Airport,Route>>(0, null);
+		
+	// as long as we are visiting a valid city
+	while (current != null) {
+	    System.out.println( current + "THIS IS WHAT WE SHOULD SEE" );
+	    if (!result.containsKey(current)) {
+		// visit node current -- record shortest path to current
+		result.put(current,possiblePath);
+		// distToCurrent is shortest distance to current node
+		int distToCurrent = possiblePath.getKey();
+				
+		// compute and consider distance to each neighbor
+		Iterator<Airport> currentNeighbors = g.neighbors(current);
+		while (currentNeighbors.hasNext()) {
+		    // get edge to neighbor
+		    Edge<Airport,Route> neighborEdge = g.getEdge(current,currentNeighbors.next());
+		    // construct (distance,edge) pair for possible result
+		    Route routeFromCurrentToNeighbor = neighborEdge.label();
+		    int distanceToNeighbor = distToCurrent + routeFromCurrentToNeighbor.distance();
+		    possiblePath = 
+			new ComparableAssociation<Integer,
+			                          Edge<Airport,Route>>(distanceToNeighbor, neighborEdge);
+		    q.add(possiblePath);	// add to priority queue
+		}
+	    }
+	    // set up for next iteration by getting the closest 
+	    // (possibly unvisited) vertex
+	    if (!q.isEmpty()) {
+		possiblePath = q.remove();
+		current = possiblePath.getValue().there();
+	    } else {
+		// no new vertex (algorithm stops)
+		current = null;
+	    }
+	}
+	return result;
+    }
+		
+    /**
+     * @pre  distances is a map from Airport to (distance, previous-edge) 
+     *       Associations.
+     * @pre  destination is the end of the route we are printing.  
+     * @post Prints out the route distances from the source to destination (by 
+     *       following the previous edges back to the source.
+     */
+    protected void 
+	printShortestPath(Map<Airport,ComparableAssociation<Integer,Edge<Airport,Route>>> distances,
+			  Airport destination) {
+	//Grab the flight from the destination to its departure airport
+	Edge<Airport, Route> onPath = distances.get(destination).getValue();
+
+	//A list to hold the routes so they print in order
+	Stack<Route> sPrint = new StackList<Route>();
+
+	// While there is another edge on our graph (flight), get the route and add it to the stack
+	while ( onPath != null ){
+	    Route nextPath = onPath.label();
+	    sPrint.add( nextPath );
+	    onPath = distances.get( onPath.here() ).getValue();
+	}
+	
+	//Print the stack, which is the path in order
+	for( Route printRoute: sPrint ) {
+	    System.out.println( printRoute + ": " + printRoute.distance() + " miles" );
+	}
+    }
+
+    ////////////////////////// trip command ///////////////////////////////
+	
+	
+    /**
+     * Handles the "trip" command.  This uses the dijkstraEarliestArrival method
+     * to compute shortest paths based on arrival time.
+     * @pre  departAirport and arriveAirport are non-null Airports, and 
+     *       earliestDepartTime is a valid time between 0 and 2359.
+     * @pre  departAirport and arriveAirport are non-null Airports.
+     * @post prints the itinerary from the departAirport
+     *       to the arriveAirport that arrives at the earliest time.
+     */
+    protected void printTrip(Airport departAirport, 
+			     Airport arriveAirport, 
+			     int earliestDepartTime) {
+	Assert.pre(departAirport != null, "bad depart airport");
+	Assert.pre(arriveAirport != null, "bad arrived airport");
+		
+	Map<Airport,ComparableAssociation<Integer,Flight>> m = 
+	    dijkstraEarliestArrival(schedule, departAirport, earliestDepartTime); 
+	if (m == null || m.get(arriveAirport) == null) {
+	    System.out.println("Not possible.");
+	} else {
+	    printItinerary(m, arriveAirport); 
+	}
+    }
+			
+    /**
+     * An implementation of Dijkstra's algorithm to compute earliest-arriving
+     * itineraries.  You should modify this method to enqueue new possible
+     * itineraries into the prioirity queue.
+     * @pre g is a scheule graph and start is a non-null Airport
+     * @post returns a map from Airport to (arrival-time, previous-flight) 
+     *       Associations.
+     */
+    protected Map<Airport,ComparableAssociation<Integer,Flight>> 
+	dijkstraEarliestArrival(Graph<Airport,Route> g, Airport start, 
+				int time)
+    {
+	// keep a priority queue of durations of flights                
+        PriorityQueue<ComparableAssociation<Integer, Flight>> q =
+            new SkewHeap<ComparableAssociation<Integer, Flight>>();
+
+        // map from node to shortest-path info                    
+        Map<Airport,ComparableAssociation<Integer,Flight>> result =
+            new Table<Airport,ComparableAssociation<Integer, Flight>>();
+
+        // airport that we are currently visiting.  Begin with start airport. 
+        Airport current = start;
+
+        // Create a "fake" association of durations and flights that leads to the start airport. 
+        ComparableAssociation<Integer,Flight> possibleTime =
+            new ComparableAssociation<Integer,Flight>(time, null);
+
+        // as long as we are visiting a valid city        
+        while (current != null) {
+            if (!result.containsKey(current)) {
+                // visit node current -- record shortest time to current        
+                result.put(current,possibleTime);
+
+		// Iterate through the airports
+                Iterator<Airport> currentNeighbors = g.neighbors(current);
+                while ( currentNeighbors.hasNext() ) {
+		    
+		    // Time to the current airport
+		    int timeToCurrent = result.get( current ).getKey();
+                    Airport theNext = currentNeighbors.next();
+
+                    // iterate through all the flights                                                        
+                    Iterator<Flight> ofFlights = g.getEdge(current, theNext).label().flights();
+		    while( ofFlights.hasNext() ) {
+			// Grab the first flight
+                        Flight nextFlight = ofFlights.next();
+			
+			// If the next flight leaves less than 30 minutes from the last flight, disregard it
+			if( differenceInMinutes( nextFlight.departTime(), timeToCurrent ) <= 30 ) {
+			    continue;
+                        }
+			// arrival time of this flight
+                        int timeToNeighbor = nextFlight.arriveTime();
+
+			//update the possibleTime with the time and this flight
+			possibleTime = new ComparableAssociation<Integer,
+                            Flight>(timeToNeighbor, nextFlight);
+
+                        // add to the priority queue         
+                        q.add(possibleTime);
+			
+		    }
+		}
+	    }
+	
+	    // set up for next iteration by getting the closest (possibly unvisited) vertex        
+            if (!q.isEmpty()) {
+                possibleTime = q.remove();
+                current = possibleTime.getValue().arrives();
+	    } else {
+		// no new vertex (algorithm stops)                                                     
+		current = null;
+            }
+	}	    
+	return result;
+    }
+    
+    // Pre: time1 and time2 are valid times
+    // Post: returns the difference in minutes between the deperature and arrival times of flights
+    protected int differenceInMinutes( int time1, int time2 ) {
+	Assert.pre( time1 >= 0, "Check those pesky time zones!" );
+	Assert.pre( time2 >= 0, "Check those pesky time zones!" );
+
+	//Change the 24hr time of the departure to a representation of hour and minute seperately
+	int time1hr = time1/100;
+	int time1min = time1%100;
+
+	//Change the 24hr time of the arrival to a representation of hour and minute seperately
+	int time2hr = time2/100;
+	int time2min = time2%100;
+
+	//Change each time to a minute representation and subtract departure from arrival
+	int result = ((time1hr*60)+time1min) - ((time2hr*60)+time2min);
+      
+	return result;
+    }
+    
+    /**
+     * @pre  earliestArrivals is a map from Airport to 
+     *       (arrivalTime, previous-flight) Associations.
+     * @pre  destination is the end of the route we are printing.  
+     * @post Prints out the flights from the source to destination (by 
+     *       following the previous flights back to the source.
+     */
+    protected void 
+	printItinerary(Map<Airport,ComparableAssociation<Integer,Flight>> earliestArrivals, 
+		       Airport destination) {
+
+	// Get the flight from the departure airport to the destination	
+	Flight timePath = earliestArrivals.get( destination ).getValue();
+
+	// A stack to hold the flights so they can be printed in order
+	Stack<Flight> bestTimes = new StackList<Flight>();
+
+	// While there is another flight along the path
+	while( timePath != null ) {
+	    // Add the flight to our stack
+	    bestTimes.add( timePath );
+	    timePath = earliestArrivals.get( timePath.departs() ).getValue();
+	}
+
+	// Print the flights along the path in order
+	for( Flight goodTime: bestTimes ){
+	    System.out.println( goodTime );
+	}
+    }
+	
+	
+    /******************* Constructors and Main *********************/
+	
+	
+    /**
+     * @pre  prefix is "small" or "large".
+     * @post creates a new FlytrapAirlines object with the given data set.
+     */
+    public FlytrapAirlines(String prefix) {
+	schedule = new GraphListDirected<Airport,Route>();
+	airports = new Hashtable<String,Airport>();
+	loadFiles(prefix);
+    }
+	
+    /**
+     * Reads in the airports.txt, dists.txt. and flights.txt 
+     * files, prepended with the given prefix.  You should
+     * call this method only with prefix equals to "large" or "small".
+     * <p>
+     * You should not modify this code.
+     */
+    protected void loadFiles(String prefix) {
+	readAirports(prefix + "-airports.txt");
+	readDistances(prefix + "-dists.txt");
+	readFlights(prefix + "-flights.txt");
+    }
+	
+    /**
+     * Helper method to read in airport data file.
+     * Adds the airports to the graph and to the airports map
+     */
+    protected void readAirports(String fileName) {
+	Scanner in = new Scanner(new FileStream(fileName));
+	while (in.hasNext()) {
+	    String code = in.next().toUpperCase();
+	    String name = in.nextLine().trim();  // removing leading/trailing white space
+	    Airport a = new Airport(code,name);
+	    airports.put(code, a);
+	    schedule.add(a);
+	}
+    }
+	
+    /**
+     * Helper method to read in the distances between airports
+     * serviced by flights.  Adds Route edges to the graph.
+     */
+    protected void readDistances(String fileName) {
+	Scanner in = new Scanner(new FileStream(fileName));
+	while (in.hasNext()) {
+	    Airport here = getAirport(in.next());
+	    Airport there = getAirport(in.next());
+	    int dist = in.nextInt();
+	    schedule.addEdge(here, there, new Route(here, there, dist));
+	    schedule.addEdge(there, here, new Route(there, here, dist));
+	}
+    }
+	
+    /**
+     * Helper method to read in flight info.
+     * Adds Flights to the Route object in the graph.
+     */
+    protected void readFlights(String fileName) {
+	Scanner in = new Scanner(new FileStream(fileName));
+	while (in.hasNext()) {
+	    int code = in.nextInt();
+	    Airport here = getAirport(in.next());
+	    Airport there = getAirport(in.next());
+	    Assert.condition(here != null, "bad airport: " + here);
+	    Assert.condition(there != null, "bad airport: " + there);
+	    int start = in.nextInt();
+	    int end = in.nextInt();
+	    int time = in.nextInt();
+	    Edge<Airport,Route> e = schedule.getEdge(here, there);
+	    Assert.condition(e != null, "bad route (edge)");
+	    Route r = e.label();
+	    Assert.condition(r != null, "bad route");
+	    Flight f = new Flight(code, here, there, start, end, time);
+	    r.addFlight(f);
+	}
+    }
+	
+    public static void main(String s[]) {
+
+	if (s.length == 0) {
+	    System.out.println("You must supply a data set (large or small).");
+	    System.out.println("Example:  java FlytrapAirlines small");
+	} else {
+	    FlytrapAirlines p = new FlytrapAirlines(s[0]);
+	    p.processCommands();
+	}
+    }
+}
